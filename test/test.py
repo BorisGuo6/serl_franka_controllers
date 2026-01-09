@@ -4,6 +4,8 @@ import numpy as np
 import geometry_msgs.msg as geom_msg
 import time
 import subprocess
+import signal
+import rosgraph
 from dynamic_reconfigure.client import Client
 from absl import app, flags, logging
 from scipy.spatial.transform import Rotation as R
@@ -15,19 +17,31 @@ flags.DEFINE_string("load_gripper", 'false', "Whether or not to load the gripper
 
 
 def main(_):
+    impedence_controller = None
+    roscore = None
+    started_master = False
     try:
         input("\033[33mPress enter to start roscore and the impedance controller.\033[0m")
         try:
-            roscore = subprocess.Popen('roscore')
+            rosgraph.Master('/serl_franka_test').getPid()
+        except Exception:
+            roscore = subprocess.Popen(['roscore'])
+            started_master = True
             time.sleep(1)
-        except:
-            pass
 
-        impedence_controller = subprocess.Popen(['roslaunch', 'serl_franka_controllers', 'impedance.launch',
-                                                f'robot_ip:={FLAGS.robot_ip}', f'load_gripper:={FLAGS.load_gripper}'],
-                                                stdout=subprocess.PIPE)
+        impedence_controller = subprocess.Popen([
+            'roslaunch',
+            'serl_franka_controllers',
+            'impedance.launch',
+            f'robot_ip:={FLAGS.robot_ip}',
+            f'load_gripper:={FLAGS.load_gripper}',
+        ])
 
-        eepub = rospy.Publisher('/cartesian_impedance_controller/equilibrium_pose', geom_msg.PoseStamped, queue_size=10)
+        eepub = rospy.Publisher(
+            '/cartesian_impedance_controller/equilibrium_pose',
+            geom_msg.PoseStamped,
+            queue_size=10,
+        )
         rospy.init_node('franka_control_api')
         client = Client("/cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node")
 
@@ -76,14 +90,24 @@ def main(_):
             time.sleep(0.1)
 
         input("\033[33m\n \nPress enter to exit the test and stop the controller.\033[0m")
-        impedence_controller.terminate()
-        roscore.terminate()
-        sys.exit()
-    except:
-        rospy.logerr("Error occured. Terminating the controller.")
-        impedence_controller.terminate()
-        roscore.terminate()
-        sys.exit()
+        return
+    except KeyboardInterrupt:
+        rospy.logwarn("Interrupted. Stopping the controller.")
+    except Exception as exc:
+        rospy.logerr("Error occurred: %s", exc)
+    finally:
+        if impedence_controller is not None:
+            impedence_controller.send_signal(signal.SIGINT)
+            try:
+                impedence_controller.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                impedence_controller.terminate()
+        if roscore is not None and started_master:
+            roscore.send_signal(signal.SIGINT)
+            try:
+                roscore.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                roscore.terminate()
 
 
 if __name__ == "__main__":
