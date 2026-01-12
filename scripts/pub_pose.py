@@ -19,7 +19,7 @@ def send_franka_pose():
 
     # 3. Define your target pose
     # Position: x, y, z in meters
-    target_pos = [0.4392239069582396, -0.013152421632842498, 0.5628677699331703]
+    target_pos = [0.3892239069582396, -0.013152421632842498, 0.5628677699331703]
     target_euler = [np.pi, 0, -np.pi/4]
 
     if target_euler:
