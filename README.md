@@ -63,6 +63,16 @@ roslaunch serl_franka_controllers joint.launch robot_ip:=<RobotIP> load_gripper:
 ```
 Here, you also need to replace <RobotIP> with the actual IP address and specify the load_gripper option. Then replace `[q1, q2, q3, q4, q5, q6, q7]` with the desired joint positions.
 
+### 6D Pose Interface (Euler)
+
+The pose interface bridges a 6D pose command topic into the impedance controller and republishes the end-effector pose as Euler angles:
+
+```bash
+rosrun serl_franka_controllers franka_pose_interface.py
+rostopic pub -1 /command_6d_pose std_msgs/Float64MultiArray "data: [0.3892239, -0.0131524, 0.5628678, 3.14159, 0.0, 0.785398]"
+rostopic echo /end_effector_pose_6d
+```
+
 
 ## rospy Example
 
