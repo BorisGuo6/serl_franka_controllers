@@ -80,6 +80,25 @@ The interface also accepts a PoseArray trajectory on `/command_pose_array`:
 rosrun serl_franka_controllers pub_trajectory.py
 ```
 
+### 7D Pose + Robotiq Interface
+
+This interface adds a 1D gripper command to the 6D pose input. The 7th value is the gripper position (0-255):
+
+```bash
+roslaunch serl_franka_controllers impedance_robotiq.launch
+rosrun serl_franka_controllers franka_robotiq_interface.py
+rostopic pub -1 /command_7d_pose std_msgs/Float64MultiArray "data: [0.3892239, -0.0131524, 0.5628678, 3.14159, 0.0, 0.785398, 0]"
+rostopic echo /end_effector_pose_7d
+```
+
+`franka_robotiq_interface.py` also accepts `/robotiq_gripper/command` and publishes `/robotiq_gripper/state`, so you do not need to run the wrapper separately.
+
+To send a 7D trajectory (x y z roll pitch yaw gripper) as a flattened array:
+
+```bash
+rosrun serl_franka_controllers pub_trajectory_7d.py
+```
+
 
 ## rospy Example
 
@@ -113,4 +132,46 @@ rosrun serl_franka_controllers franka_pose_interface.py
 ```bash
 # Publish a sample PoseArray trajectory to /command_pose_array
 rosrun serl_franka_controllers pub_trajectory.py
+```
+
+```bash
+# Publish a sample 7D trajectory (pose + gripper) to /command_7d_pose_array
+rosrun serl_franka_controllers pub_trajectory_7d.py
+```
+
+```bash
+# Bridge 7D pose + gripper commands and republish EE pose as 7D
+rosrun serl_franka_controllers franka_robotiq_interface.py
+```
+
+```bash
+# Wrap Robotiq gripper command/state topics (standalone)
+rosrun serl_franka_controllers robotiq_gripper_wrapper.py
+```
+## Robotiq gripper wrapper
+This node subscribes to a command topic and publishes gripper state.
+
+Start the node:
+
+```bash
+rosrun serl_franka_controllers robotiq_gripper_wrapper.py
+```
+
+Send a command (position, speed, force in 0-255):
+
+```bash
+rostopic pub -1 /robotiq_gripper/command std_msgs/Int32MultiArray "data: [120, 200, 50]"
+```
+
+Open/close examples:
+
+```bash
+rostopic pub -1 /robotiq_gripper/command std_msgs/Int32MultiArray "data: [0, 200, 50]"
+rostopic pub -1 /robotiq_gripper/command std_msgs/Int32MultiArray "data: [255, 200, 50]"
+```
+
+Read state (data order: gPO, gPR, gCU, gSTA, gOBJ, gFLT):
+
+```bash
+rostopic echo /robotiq_gripper/state
 ```
