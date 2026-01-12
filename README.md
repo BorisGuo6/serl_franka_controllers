@@ -68,9 +68,16 @@ Here, you also need to replace <RobotIP> with the actual IP address and specify 
 The pose interface bridges a 6D pose command topic into the impedance controller and republishes the end-effector pose as Euler angles:
 
 ```bash
+roslaunch serl_franka_controllers impedance.launch
 rosrun serl_franka_controllers franka_pose_interface.py
 rostopic pub -1 /command_6d_pose std_msgs/Float64MultiArray "data: [0.3892239, -0.0131524, 0.5628678, 3.14159, 0.0, 0.785398]"
 rostopic echo /end_effector_pose_6d
+```
+
+The interface also accepts a PoseArray trajectory on `/command_pose_array`:
+
+```bash
+rosrun serl_franka_controllers pub_trajectory.py
 ```
 
 
@@ -82,4 +89,28 @@ conda create -n serl_controller python=3.8
 conda activate serl_controller
 pip install -r requirements.txt
 python test/test.py --robot_ip=ROBOT_IP
+```
+
+## Scripts
+
+Quick usage examples for each script under `scripts/`:
+
+```bash
+# Publish end-effector pose from TF to /end_effector_pose
+rosrun serl_franka_controllers publish_franka_ee_pose.py
+```
+
+```bash
+# Send a single PoseStamped target to the impedance controller
+rosrun serl_franka_controllers pub_pose.py
+```
+
+```bash
+# Bridge 6D Euler commands and republish EE pose as 6D
+rosrun serl_franka_controllers franka_pose_interface.py
+```
+
+```bash
+# Publish a sample PoseArray trajectory to /command_pose_array
+rosrun serl_franka_controllers pub_trajectory.py
 ```

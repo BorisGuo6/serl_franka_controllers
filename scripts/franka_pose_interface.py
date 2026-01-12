@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import threading
+
 import rospy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from std_msgs.msg import Float64MultiArray
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
@@ -18,8 +20,17 @@ class FrankaPoseInterface:
             "~ee_pose_6d_topic",
             "end_effector_pose_6d",
         )
+        self.trajectory_topic = rospy.get_param(
+            "~trajectory_topic",
+            "command_pose_array",
+        )
+        self.trajectory_rate = float(rospy.get_param("~trajectory_rate", 10.0))
         self.euler_axes = rospy.get_param("~euler_axes", "rxyz")
         self.log_throttle = float(rospy.get_param("~log_throttle", 2.0))
+
+        if self.trajectory_rate <= 0.0:
+            rospy.logwarn("trajectory_rate must be > 0.0, using 10.0")
+            self.trajectory_rate = 10.0
 
         self.command_pub = rospy.Publisher(
             self.command_out_topic,
@@ -38,12 +49,22 @@ class FrankaPoseInterface:
             self._command_cb,
             queue_size=1,
         )
+        self.trajectory_sub = rospy.Subscriber(
+            self.trajectory_topic,
+            PoseArray,
+            self._trajectory_cb,
+            queue_size=1,
+        )
         self.ee_pose_sub = rospy.Subscriber(
             self.ee_pose_topic,
             PoseStamped,
             self._ee_pose_cb,
             queue_size=1,
         )
+
+        self._trajectory_lock = threading.Lock()
+        self._trajectory_cancel = threading.Event()
+        self._trajectory_thread = None
 
         rospy.loginfo(
             "Franka pose interface: command %s -> %s, ee pose %s -> %s",
@@ -65,17 +86,47 @@ class FrankaPoseInterface:
         x, y, z, roll, pitch, yaw = msg.data[:6]
         quat = quaternion_from_euler(roll, pitch, yaw, axes=self.euler_axes)
 
-        pose_msg = PoseStamped()
-        pose_msg.header.stamp = rospy.Time.now()
-        pose_msg.header.frame_id = self.base_frame
-        pose_msg.pose.position.x = x
-        pose_msg.pose.position.y = y
-        pose_msg.pose.position.z = z
-        pose_msg.pose.orientation.x = quat[0]
-        pose_msg.pose.orientation.y = quat[1]
-        pose_msg.pose.orientation.z = quat[2]
-        pose_msg.pose.orientation.w = quat[3]
-        self.command_pub.publish(pose_msg)
+        pose = Pose()
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = z
+        pose.orientation.x = quat[0]
+        pose.orientation.y = quat[1]
+        pose.orientation.z = quat[2]
+        pose.orientation.w = quat[3]
+        self._publish_pose(pose, self.base_frame)
+
+    def _trajectory_cb(self, msg: PoseArray) -> None:
+        if not msg.poses:
+            rospy.logwarn_throttle(
+                self.log_throttle,
+                "Received empty PoseArray on %s",
+                self.trajectory_topic,
+            )
+            return
+
+        frame_id = msg.header.frame_id if msg.header.frame_id else self.base_frame
+        poses = list(msg.poses)
+
+        with self._trajectory_lock:
+            if self._trajectory_thread and self._trajectory_thread.is_alive():
+                self._trajectory_cancel.set()
+
+            self._trajectory_cancel = threading.Event()
+            self._trajectory_thread = threading.Thread(
+                target=self._run_trajectory,
+                args=(poses, frame_id, self._trajectory_cancel),
+                daemon=True,
+            )
+            self._trajectory_thread.start()
+
+    def _run_trajectory(self, poses, frame_id, cancel_event) -> None:
+        rate = rospy.Rate(self.trajectory_rate)
+        for pose in poses:
+            if rospy.is_shutdown() or cancel_event.is_set():
+                return
+            self._publish_pose(pose, frame_id)
+            rate.sleep()
 
     def _ee_pose_cb(self, msg: PoseStamped) -> None:
         quat = (
@@ -96,6 +147,13 @@ class FrankaPoseInterface:
             yaw,
         ]
         self.ee_pose_pub.publish(out_msg)
+
+    def _publish_pose(self, pose: Pose, frame_id: str) -> None:
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = rospy.Time.now()
+        pose_msg.header.frame_id = frame_id
+        pose_msg.pose = pose
+        self.command_pub.publish(pose_msg)
 
 
 def main() -> None:
