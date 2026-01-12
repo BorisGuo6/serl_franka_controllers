@@ -7,7 +7,7 @@
     <arg name="load_gripper" value="$(arg load_gripper)" />
   </include>
 
-  <node pkg="graspflow" 
+  <node pkg="serl_franka_controllers" 
     type="publish_franka_ee_pose.py" 
     name="ee_pose_publisher" 
     output="screen">
