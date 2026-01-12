@@ -85,7 +85,7 @@ rosrun serl_franka_controllers pub_trajectory.py
 This interface adds a 1D gripper command to the 6D pose input. The 7th value is the gripper position (0-255):
 
 ```bash
-roslaunch serl_franka_controllers impedance_robotiq.launch
+roslaunch serl_franka_controllers impedance_robotiq_camera.launch
 rosrun serl_franka_controllers franka_robotiq_interface.py
 rostopic pub -1 /command_7d_pose std_msgs/Float64MultiArray "data: [0.3892239, -0.0131524, 0.5628678, 3.14159, 0.0, 0.785398, 0]"
 rostopic echo /end_effector_pose_7d
@@ -117,6 +117,16 @@ Quick usage examples for each script under `scripts/`:
 ```bash
 # Publish end-effector pose from TF to /end_effector_pose
 rosrun serl_franka_controllers publish_franka_ee_pose.py
+```
+
+```bash
+# Publish the L515 RGB stream to /camera2/image_raw
+rosrun serl_franka_controllers publish_camera_img.py
+```
+
+```bash
+# View camera images
+rosrun rqt_image_view rqt_image_view
 ```
 
 ```bash

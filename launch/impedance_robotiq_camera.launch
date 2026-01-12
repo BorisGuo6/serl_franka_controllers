@@ -1,0 +1,17 @@
+<?xml version="1.0" ?>
+<launch>
+  <arg name="robot_ip" default="172.16.0.2"/>
+  <arg name="load_gripper" default="false" />
+  <arg name="robotiq_device" default="/dev/ttyUSB0" />
+
+  <include file="$(find serl_franka_controllers)/launch/impedance_robotiq.launch">
+    <arg name="robot_ip" value="$(arg robot_ip)" />
+    <arg name="load_gripper" value="$(arg load_gripper)" />
+    <arg name="robotiq_device" value="$(arg robotiq_device)" />
+  </include>
+
+  <node pkg="serl_franka_controllers"
+        type="publish_camera_img.py"
+        name="camera_publisher"
+        output="screen" />
+</launch>

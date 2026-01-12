@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import threading
 
 import rospy
@@ -29,6 +30,8 @@ class FrankaRobotiqInterface:
         self.ee_pose_7d_topic = rospy.get_param("~ee_pose_7d_topic", "end_effector_pose_7d")
         self.trajectory_topic = rospy.get_param("~trajectory_topic", "command_7d_pose_array")
         self.trajectory_rate = float(rospy.get_param("~trajectory_rate", 10.0))
+        self.gripper_interpolate = bool(rospy.get_param("~gripper_interpolate", True))
+        self.gripper_slew_rate = float(rospy.get_param("~gripper_slew_rate", 300.0))
         self.euler_axes = rospy.get_param("~euler_axes", "rxyz")
         self.log_throttle = float(rospy.get_param("~log_throttle", 2.0))
 
@@ -57,9 +60,13 @@ class FrankaRobotiqInterface:
         if self.trajectory_rate <= 0.0:
             rospy.logwarn("trajectory_rate must be > 0.0, using 10.0")
             self.trajectory_rate = 10.0
+        if self.gripper_slew_rate < 0.0:
+            rospy.logwarn("gripper_slew_rate must be >= 0.0, using 0.0")
+            self.gripper_slew_rate = 0.0
 
         self._last_pose = None
         self._last_gripper_pose = None
+        self._last_gripper_cmd = None
 
         self._pose_pub = rospy.Publisher(
             self.command_out_topic,
@@ -169,23 +176,56 @@ class FrankaRobotiqInterface:
             self._trajectory_thread.start()
 
     def _run_trajectory(self, steps, cancel_event) -> None:
-        rate = rospy.Rate(self.trajectory_rate)
+        step_duration = 1.0 / self.trajectory_rate
+        prev_gripper = (
+            self._last_gripper_cmd
+            if self._last_gripper_cmd is not None
+            else self.default_gripper_pose
+        )
+
         for step in steps:
             if rospy.is_shutdown() or cancel_event.is_set():
                 return
+            start_time = rospy.Time.now()
             x, y, z, roll, pitch, yaw, gripper = step
             self._publish_pose(x, y, z, roll, pitch, yaw, self.base_frame)
-            self._publish_gripper_command(gripper)
-            rate.sleep()
+
+            target_gripper = _clamp(gripper)
+            if self.gripper_interpolate and self.gripper_slew_rate > 0.0:
+                delta = target_gripper - prev_gripper
+                max_delta = self.gripper_slew_rate * step_duration
+                if max_delta > 0.0:
+                    sub_steps = max(1, int(math.ceil(abs(delta) / max_delta)))
+                else:
+                    sub_steps = 1
+            else:
+                delta = target_gripper - prev_gripper
+                sub_steps = 1
+
+            for i in range(1, sub_steps + 1):
+                if rospy.is_shutdown() or cancel_event.is_set():
+                    return
+                value = prev_gripper + (delta * (float(i) / float(sub_steps)))
+                self._publish_gripper_command(value)
+                if i < sub_steps:
+                    rospy.sleep(step_duration / float(sub_steps))
+
+            prev_gripper = target_gripper
+            elapsed = (rospy.Time.now() - start_time).to_sec()
+            remaining = step_duration - elapsed
+            if remaining > 0.0:
+                rospy.sleep(remaining)
 
     def _publish_gripper_command(self, gripper) -> None:
+        gripper_value = _clamp(gripper)
         cmd = OutputMsg()
         cmd.rACT = 1
         cmd.rGTO = 1
-        cmd.rPR = _clamp(gripper)
+        cmd.rPR = gripper_value
         cmd.rSP = self.default_gripper_speed
         cmd.rFR = self.default_gripper_force
         self._gripper_pub.publish(cmd)
+        self._last_gripper_cmd = gripper_value
 
     def _activate_gripper(self) -> None:
         cmd = OutputMsg()
@@ -210,6 +250,7 @@ class FrankaRobotiqInterface:
         cmd.rSP = speed
         cmd.rFR = force
         self._gripper_pub.publish(cmd)
+        self._last_gripper_cmd = position
 
     def _publish_pose(self, x, y, z, roll, pitch, yaw, frame_id) -> None:
         quat = quaternion_from_euler(roll, pitch, yaw, axes=self.euler_axes)
