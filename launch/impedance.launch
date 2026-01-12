@@ -1,11 +1,17 @@
 <?xml version="1.0" ?>
 <launch>
-  <arg name="robot_ip" />
-  <arg name="load_gripper" default="true" />
-  <include file="$(find franka_control)/launch/franka_control.launch" >
+  <arg name="robot_ip" default="172.16.0.2"/>
+  <arg name="load_gripper" default="false" />
+  <include file="$(find franka_control)/launch/franka_control_serl.launch" >
     <arg name="robot_ip" value="$(arg robot_ip)" />
     <arg name="load_gripper" value="$(arg load_gripper)" />
   </include>
+
+  <node pkg="graspflow" 
+    type="publish_franka_ee_pose.py" 
+    name="ee_pose_publisher" 
+    output="screen">
+  </node>
 
   <rosparam command="load" file="$(find serl_franka_controllers)/config/serl_franka_controllers.yaml" />
   <node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="true" output="screen" args="cartesian_impedance_controller"/>
